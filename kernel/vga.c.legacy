@@ -1,0 +1,26 @@
+#include "vga.h"
+#include "serial.h"
+#define W 80
+#define H 25
+#define MEM ((unsigned short*)0xB8000)
+static int cx=0,cy=0;
+static unsigned char color=0x07;
+static void scroll(void){
+    if(cy<H)return;
+    for(int i=0;i<(H-1)*W;i++)MEM[i]=MEM[i+W];
+    for(int i=(H-1)*W;i<H*W;i++)MEM[i]=(color<<8)|' ';
+    cy=H-1;
+}
+void vga_clear(void){for(int i=0;i<W*H;i++)MEM[i]=(color<<8)|' ';cx=cy=0;}
+void vga_putchar(char c){
+    serial_putchar(c);
+    if(c=='\n'){cx=0;cy++;}
+    else if(c=='\r'){cx=0;}
+    else if(c=='\b'){if(cx>0)cx--;MEM[cy*W+cx]=(color<<8)|' ';}
+    else if(c=='\t'){cx=(cx+4)&~3;}
+    else{MEM[cy*W+cx]=(color<<8)|c;if(++cx>=W){cx=0;cy++;}}
+    scroll();
+}
+void vga_write(const char*s){while(*s)vga_putchar(*s++);}
+void vga_set_color(unsigned char c){color=c;}
+void vga_init(void){vga_clear();}
