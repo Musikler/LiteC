@@ -1,0 +1,28 @@
+Offset  Size   Field
+0       4      Magic "LCS1"
+4       4      Version (u32 LE, currently 1)
+8       4      Flags (u32 LE, must be 0)
+12      4      Name length (u32 LE, ≤63)
+16      4      Entry offset from load base (u32 LE, 0 = load_base)
+20      4      Payload size (u32 LE, ≤32 KB)
+24      N      Name (UTF-8)
+24+N    P      Payload (raw i386 code)
+
+Load base: 0x300000
+Syscall table pointer: written to physical 0x4020
+
+Syscall table (pointer-array at 0x4020):
+  [0]  void (*write)(const char *s)
+  [1]  void (*put_pixel)(int x, int y, u32 rgb)
+  [2]  void (*fill_rect)(int x, int y, int w, int h, u32 rgb)
+  [3]  void (*text)(int x, int y, const char *s, u32 rgb)
+  [4]  void (*exit)(void)
+
+BUILDING A LCS (example where hello.c the program is.):
+// What is Required?
+// 1. The Source Code (hello.c)
+// 1. The Linker File (lcs.ld)
+gcc -m32 -ffreestanding -fno-pie -fno-pic -fno-stack-protector -nostdlib -O2 \
+    -c tools/sample/hello.c -o /tmp/hello.o
+ld -m elf_i386 -T tools/sample/lcs.ld --oformat binary -o /tmp/hello.bin /tmp/hello.o
+python3 tools/packlcs.py /tmp/hello.bin Hello /tmp/hello.lcs
