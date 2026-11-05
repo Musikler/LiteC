@@ -68,4 +68,6 @@ Alternatively if you have problems with the VGA driver, rename vga.c.legacy to v
 !! THIS IS NOT FAT32/NTFS
 This is a custom file system
 ## Thanks for reading and much fun with this
-# THE SDK IS DROPPING SOON (for making LCS apps)
+# Making LCS apps
+Follow Instructions in LCS_FORMAT_DOCUMENTATION
+everything you need is in tools/
