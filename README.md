@@ -7,7 +7,15 @@
 [![Language](https://img.shields.io/badge/Language-C%20%2F%20Assembly-blue.svg)](#)
 [![Architecture](https://img.shields.io/badge/Architecture-x86%20(32--bit)-lightgrey.svg)](#)
 [![Environment](https://img.shields.io/badge/Tested%20on-QEMU%20%7C%20VMware-green.svg)](#)
-
+<div align="center">
+  <img src="opt_sources/installer.png" alt="LiteC Installer" width="600">
+</div>
+<div align="center">
+  <img src="opt_sources/panicVGA.png" alt="LiteC Panic Screen (LegVGA)" width="600">
+</div>
+<div align="center">
+  <img src="opt_sources/panicFB.png" alt="LiteC Panic Screen" width="600">
+</div>
 </div>
 
 ## 📖 What is LiteC?
