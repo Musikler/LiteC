@@ -1,5 +1,7 @@
 #include "panic.h"
 #include "serial.h"
+#include "fb.h"
+#include "gfx.h"
 
 #define VGA ((unsigned short*)0xB8000)
 #define W 80
@@ -27,6 +29,22 @@ static unsigned int get_eip(void) {
     __asm__ __volatile__("call 1f\n1:\tpopl %0" : "=r"(eip));
     return eip;
 }
+
+static int contains(const char *hay, const char *needle) {
+    if (!hay || !needle || !*needle) return 0;
+    for (; *hay; hay++) {
+        const char *a = hay, *b = needle;
+        while (*a && *b && *a == *b) { a++; b++; }
+        if (!*b) return 1;
+    }
+    return 0;
+}
+
+static void serial_str(const char *s) { while (s && *s) serial_putchar(*s++); }
+
+/* ========================================================= */
+/*  VGA TEXT MODE PANIC (Floppy Boot)                        */
+/* ========================================================= */
 
 static void disable_cursor(void) {
     port_outb(0x3D4, 0x0A);
@@ -87,26 +105,11 @@ static void body_row(int row) {
     side(row);
 }
 
-static int contains(const char *hay, const char *needle) {
-    if (!hay || !needle || !*needle) return 0;
-    for (; *hay; hay++) {
-        const char *a = hay, *b = needle;
-        while (*a && *b && *a == *b) { a++; b++; }
-        if (!*b) return 1;
-    }
-    return 0;
-}
-
-static void serial_str(const char *s) { while (s && *s) serial_putchar(*s++); }
-
-__attribute__((noreturn))
-static void panic_impl(const char *reason, regs_t *r,
-                       const char *h1, const char *h2, const char *h3) {
-    __asm__ volatile("cli");
+static void panic_vga(const char *reason, regs_t *r,
+                      const char *h1, const char *h2, const char *h3) {
     disable_cursor();
     fill_attr(A_BG);
 
-    /* Frame */
     border_top();
     body_row(1);
     {
@@ -118,12 +121,9 @@ static void panic_impl(const char *reason, regs_t *r,
     border_mid();
     for (int row = 3; row <= 19; row++) body_row(row);
 
-    /* REASON */
     write_at(3, 3, "REASON:", A_LABEL);
-    write_at(4, 5, reason ? reason : "(no reason given)",
-             reason ? A_BODY : A_INFO);
+    write_at(4, 5, reason ? reason : "(no reason given)", reason ? A_BODY : A_INFO);
 
-    /* REGISTERS */
     write_at(6, 3, "REGISTERS:", A_LABEL);
     unsigned int eax, ebx, ecx, edx, esi, edi, ebp, esp, eip, cs, eflags, intno;
     if (r) {
@@ -141,7 +141,7 @@ static void panic_impl(const char *reason, regs_t *r,
         __asm__ volatile("mov %%esp,%0":"=r"(esp));
         eflags = 0; __asm__ volatile("pushf; pop %0" : "=r"(eflags));
         cs = 0; __asm__ volatile("mov %%cs,%0":"=r"(cs));
-        eip = get_eip() - 5;         /* return address minus call instruction */
+        eip = get_eip() - 5;
         intno = 0;
     }
 
@@ -149,24 +149,19 @@ static void panic_impl(const char *reason, regs_t *r,
     kv(7, 19, "EBX=", 23, ebx);
     kv(7, 33, "ECX=", 37, ecx);
     kv(7, 47, "EDX=", 51, edx);
-
     kv(8,  5, "ESI=",  9, esi);
     kv(8, 19, "EDI=", 23, edi);
     kv(8, 33, "EBP=", 37, ebp);
     kv(8, 47, "ESP=", 51, esp);
-
     kv(9,  5, "EIP=",    9, eip);
     kv(9, 19, "CS=",    23, cs);
     kv(9, 33, "EFLAGS=", 41, eflags);
     kv(9, 51, "INT=",   55, intno);
-
     kv(10,  5, "CR0=",  9, rd_cr0());
     kv(10, 19, "CR2=", 23, rd_cr2());
     kv(10, 33, "CR3=", 37, rd_cr3());
 
-    /* WHAT TO DO */
     write_at(12, 3, "WHAT TO DO:", A_LABEL);
-
     if (!h1) {
         if (contains(reason, "ATA")) {
             h1 = "Ensure a data disk is attached (QEMU: -drive file=data.img,if=ide).";
@@ -176,14 +171,6 @@ static void panic_impl(const char *reason, regs_t *r,
             h1 = "The on-disk filesystem is corrupt or was not recognised.";
             h2 = "From the shell: 'format'  (erases all files on the data disk!).";
             h3 = "Or delete data.img and let LiteFS reformat on next boot.";
-        } else if (contains(reason, "keyboard") || contains(reason, "PS/2")) {
-            h1 = "The PS/2 keyboard controller did not respond.";
-            h2 = "Check the VM's USB controller setting; then reboot the VM.";
-            h3 = "Serial console on COM1 works as a keyboard fallback.";
-        } else if (contains(reason, "assert")) {
-            h1 = "An internal invariant was violated.";
-            h2 = "Note the reason above; that is the culprit expression.";
-            h3 = "Rebuild and retest; if it repeats, bisect the last change.";
         } else {
             h1 = "Reboot the VM. If the panic repeats, note the reason above.";
             h2 = "Run 'make clean && make' to rule out a stale build.";
@@ -194,18 +181,128 @@ static void panic_impl(const char *reason, regs_t *r,
     write_at(14, 5, "2.", A_LABEL); write_at(14, 8, h2 ? h2 : "", A_HINT);
     write_at(15, 5, "3.", A_LABEL); write_at(15, 8, h3 ? h3 : "", A_HINT);
 
-    /* Build info */
-    write_at(17, 3, "LiteC (Bumblebee) v0.3    built "
-             __DATE__ " " __TIME__, A_INFO);
-
-    /* Halt */
-    write_at(19, 3,
-             "System halted. Power off the VM (QEMU: Ctrl+A then X; VMware: Power Off).",
-             A_LABEL);
-
+    write_at(17, 3, "LiteC (Bumblebee) v0.3    built " __DATE__ " " __TIME__, A_INFO);
+    write_at(19, 3, "System halted. Power off the VM (QEMU: Ctrl+A then X; VMware: Power Off).", A_LABEL);
     border_bottom(20);
+}
 
-    /* Mirror to serial for logging */
+/* ========================================================= */
+/*  FRAMEBUFFER PANIC (HDD Boot)                             */
+/* ========================================================= */
+
+static void hex_to_str(unsigned int v, char *buf) {
+    static const char hx[] = "0123456789ABCDEF";
+    buf[0] = '0'; buf[1] = 'x';
+    for (int i = 0; i < 8; i++) {
+        buf[9 - i] = hx[v & 0xF];
+        v >>= 4;
+    }
+    buf[10] = 0;
+}
+
+static void fb_draw_reg(int x, int y, const char *name, unsigned int val, unsigned int label_col, unsigned int val_col) {
+    char buf[16];
+    hex_to_str(val, buf);
+    gfx_text(x, y, name, label_col);
+    gfx_text(x + 50, y, buf, val_col);
+}
+
+static void panic_fb(const char *reason, regs_t *r,
+                     const char *h1, const char *h2, const char *h3) {
+    unsigned int bg = 0x1A0505; /* very dark red/black */
+    unsigned int fg = 0xFFFFFF;
+    unsigned int lbl = 0xFFFF55; /* yellow */
+    unsigned int err = 0xFF5555; /* red */
+    unsigned int hint = 0x55FFFF; /* cyan */
+
+    fb_clear(bg);
+
+    int y = 40;
+    int x = 40;
+
+    gfx_text(x, y, "LITEC (BUMBLEBEE) KERNEL PANIC", err); y += 40;
+
+    gfx_text(x, y, "REASON:", lbl); y += 20;
+    gfx_text(x + 20, y, reason ? reason : "(no reason given)", fg); y += 40;
+
+    gfx_text(x, y, "REGISTERS:", lbl); y += 20;
+    
+    unsigned int eax, ebx, ecx, edx, esi, edi, ebp, esp, eip, cs, eflags, intno;
+    if (r) {
+        eax = r->eax; ebx = r->ebx; ecx = r->ecx; edx = r->edx;
+        esi = r->esi; edi = r->edi; ebp = r->ebp; esp = r->esp;
+        eip = r->eip; cs = r->cs;   eflags = r->eflags; intno = r->int_no;
+    } else {
+        __asm__ volatile("mov %%eax,%0":"=r"(eax));
+        __asm__ volatile("mov %%ebx,%0":"=r"(ebx));
+        __asm__ volatile("mov %%ecx,%0":"=r"(ecx));
+        __asm__ volatile("mov %%edx,%0":"=r"(edx));
+        __asm__ volatile("mov %%esi,%0":"=r"(esi));
+        __asm__ volatile("mov %%edi,%0":"=r"(edi));
+        __asm__ volatile("mov %%ebp,%0":"=r"(ebp));
+        __asm__ volatile("mov %%esp,%0":"=r"(esp));
+        eflags = 0; __asm__ volatile("pushf; pop %0" : "=r"(eflags));
+        cs = 0; __asm__ volatile("mov %%cs,%0":"=r"(cs));
+        eip = get_eip() - 5;
+        intno = 0;
+    }
+
+    fb_draw_reg(x, y, "EAX:", eax, lbl, fg);
+    fb_draw_reg(x + 180, y, "EBX:", ebx, lbl, fg);
+    fb_draw_reg(x + 360, y, "ECX:", ecx, lbl, fg);
+    fb_draw_reg(x + 540, y, "EDX:", edx, lbl, fg);
+    y += 20;
+    fb_draw_reg(x, y, "ESI:", esi, lbl, fg);
+    fb_draw_reg(x + 180, y, "EDI:", edi, lbl, fg);
+    fb_draw_reg(x + 360, y, "EBP:", ebp, lbl, fg);
+    fb_draw_reg(x + 540, y, "ESP:", esp, lbl, fg);
+    y += 20;
+    fb_draw_reg(x, y, "EIP:", eip, lbl, fg);
+    fb_draw_reg(x + 180, y, "CS:", cs, lbl, fg);
+    fb_draw_reg(x + 360, y, "EFLAGS:", eflags, lbl, fg);
+    fb_draw_reg(x + 540, y, "INT:", intno, lbl, fg);
+    y += 40;
+
+    gfx_text(x, y, "WHAT TO DO:", lbl); y += 20;
+    
+    if (!h1) {
+        if (contains(reason, "ATA")) {
+            h1 = "Ensure a data disk is attached (QEMU: -drive file=data.img,if=ide).";
+            h2 = "VMware: add ide0:0.fileName=\"data.img\" to the .vmx (VM off).";
+            h3 = "Delete data.img to force LiteFS to reformat on next boot.";
+        } else if (contains(reason, "LiteFS")) {
+            h1 = "The on-disk filesystem is corrupt or was not recognised.";
+            h2 = "From the shell: 'format'  (erases all files on the data disk!).";
+            h3 = "Or delete data.img and let LiteFS reformat on next boot.";
+        } else {
+            h1 = "Reboot the VM. If the panic repeats, note the reason above.";
+            h2 = "Run 'make clean && make' to rule out a stale build.";
+            h3 = "Bisect the last change; the register dump above is the clue.";
+        }
+    }
+
+    gfx_text(x + 20, y, "1.", lbl); gfx_text(x + 40, y, h1 ? h1 : "", hint); y += 20;
+    gfx_text(x + 20, y, "2.", lbl); gfx_text(x + 40, y, h2 ? h2 : "", hint); y += 20;
+    gfx_text(x + 20, y, "3.", lbl); gfx_text(x + 40, y, h3 ? h3 : "", hint); y += 40;
+
+    gfx_text(x, y, "System halted. Power off the VM.", lbl);
+}
+
+/* ========================================================= */
+/*  MAIN PANIC DISPATCHER                                    */
+/* ========================================================= */
+
+__attribute__((noreturn))
+static void panic_impl(const char *reason, regs_t *r,
+                       const char *h1, const char *h2, const char *h3) {
+    __asm__ volatile("cli");
+
+    if (fb_available()) {
+        panic_fb(reason, r, h1, h2, h3);
+    } else {
+        panic_vga(reason, r, h1, h2, h3);
+    }
+
     serial_putchar('\n');
     serial_str("*** LiteC PANIC ***\n");
     serial_str(reason ? reason : "(no reason)");

@@ -222,23 +222,39 @@ static int screen_complete(void) {
         if (c == '\n') return 1;
     }
 }
-
-int installer_run(void) {
-    if (!ata_present()) {
-        scr_fill(C_TEXT);
-        box();
-        str_center(10, "ERROR: no hard disk detected", C_ERR);
-        str_center(12, "Attach a disk to the IDE controller and retry.", C_TEXT);
-        str_center(20, "[ENTER] return to shell", C_DIM);
-        while (keyboard_getchar() != '\n') ;
-        return -1;
+static int screen_keyboard(void) {
+    scr_fill(C_TEXT);
+    box();
+    str_center(4, "Select Keyboard Layout", C_TITLE);
+    str_at(8, 10, "[1] English (US)", C_TEXT);
+    str_at(10, 10, "[2] German (DE)", C_TEXT);
+    str_center(20, "Press 1 or 2", C_DIM);
+    for (;;) {
+        char c = keyboard_getchar();
+        if (c == '1') return 0;
+        if (c == '2') return 1;
     }
+}
+int installer_run(void) {
+    if (!ata_present()) { /* ... error ... */ }
 
     if (!screen_welcome())       return 0;
     if (!screen_disk())          return 0;
+    
+    /* NEW: Ask for keyboard layout */
+    int is_de = screen_keyboard(); 
+    
     if (!screen_confirm())       return 0;
 
     int rc = screen_progress_and_install();
-    if (rc == 0) screen_complete();
+    if (rc == 0) {
+        /* Save layout config to LiteFS */
+        fs_create("keymap.cfg");
+        if (is_de) fs_write("keymap.cfg", "de\n", 3);
+        else       fs_write("keymap.cfg", "en\n", 3);
+        litefs_sync();
+        
+        screen_complete();
+    }
     return rc;
 }

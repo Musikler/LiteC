@@ -25,15 +25,21 @@ void kernel_main(void) {
     fs_init();
 
     if (ata_init() == 0) {
-        vga_write("  ATA disk found\n");
-        if (litefs_mount() != 0)
-            panic("LiteFS mount failed: disk present but unreadable");
-        vga_write("  LiteFS mounted\n");
-    } else {
-        vga_write("  No ATA disk -- filesystem is RAM-only\n");
+        if (litefs_mount() == 0) {
+            vga_write("  LiteFS mounted\n");
+            
+            /* Load keyboard layout */
+            char cfg[16];
+            if (fs_read("keymap.cfg", cfg, sizeof(cfg)) > 0) {
+                if (cfg[0] == 'd' && cfg[1] == 'e') {
+                    keyboard_set_layout(1);
+                    vga_write("  Keyboard: DE\n");
+                } else {
+                    vga_write("  Keyboard: EN\n");
+                }
+            }
+        }
     }
-
-    vga_write("Type 'help' for commands.\n\n");
     shell_run();
     while (1);
 }

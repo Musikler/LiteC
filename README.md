@@ -21,6 +21,9 @@ It is designed to be a playground for OS development, demonstrating how to bridg
 ## ✨ Features
 
 *   **Custom Bootloaders:** Floppy (CHS) and Hard Disk (LBA) boot sectors that set up VESA video modes and enter 32-bit Protected Mode.
+*   **Multiple Keyboard Layouts** German and English keyboard layout. (Can be choosed in installer)
+*   **Semi-Sound Support (in development)** Sound Support
+*   **OPEN SOURCE** You can modify this in anyway. Just give credit (e.g. Made with LiteC OS)
 *   **Custom Filesystem (LiteFS):** A persistent on-disk filesystem featuring a superblock, inode table, and contiguous block allocation.
 *   **Graphical Desktop:** A framebuffer-driven GUI featuring:
     *   Dark-mode gradient wallpapers and a custom Taskbar.

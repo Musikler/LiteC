@@ -17,6 +17,11 @@ LDFLAGS  = -m elf_i386 -T linker.ld
 # ------------------------------------------------------------
 KOBJS = kernel/entry.o \
         kernel/kernel.o \
+		kernel/sound.o \
+        kernel/commands/beep.o \
+        kernel/commands/shutdown.o \
+        kernel/commands/calc.o \
+        kernel/commands/writer.o \
         kernel/vga.o \
         kernel/serial.o \
         kernel/keyboard.o \
@@ -186,6 +191,10 @@ kernel/stage2hdd_bytes.h: boot/stage2hdd.bin
 	xxd -i -n boot_stage2hdd_bin $< > $@
 
 kernel/installer.o: kernel/boothdd_bytes.h kernel/stage2hdd_bytes.h
+formatDisk:
+	rm -f disk.img
+	rm -f data.img
+	dd if=/dev/zero of=disk.img bs=1M count=128 status=none
 # ------------------------------------------------------------
 # Clean
 # ------------------------------------------------------------
