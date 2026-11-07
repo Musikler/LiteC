@@ -65,6 +65,7 @@ I hope you know how to do that. If not, this is not the right thing for you to d
 2. run "dd if=/dev/zero of=disk.img bs=1M count=128 status=none" (adjust count to specify disk space in MB (default 128) )
 3. run "qemu-system-i386 \
     -drive format=raw,file=disk.img,if=ide,cache=writeback \
+    -drive format=raw,file=litec.img,if=floppy,cache=writeback \
     -display gtk"
 You should have now booted into the LiteC commandline
 Depending on your computer framebuffer may be supported. You can tell if the Text looks sharp and not blurry
